@@ -17,12 +17,12 @@ import {
 
 // ===== ใส่ firebaseConfig ของคุณ =====
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCgmB-hrpSwLvSxTh4zsNVFdYltFUIKFRs",
+  authDomain: "system-base-38187.firebaseapp.com",
+  projectId: "system-base-38187",
+  storageBucket: "system-base-38187.firebasestorage.app",
+  messagingSenderId: "358619730041",
+  appId: "1:358619730041:web:4783c527a5dca13cf644a8"
 };
 
 
