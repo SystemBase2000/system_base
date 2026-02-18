@@ -3,21 +3,22 @@ import {
   getAuth, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
-  onAuthStateChanged, 
-  signOut 
+  onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 import { 
   getFirestore, 
-  collection, 
-  addDoc, 
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
   serverTimestamp 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 
-// ===== ใส่ firebaseConfig ของคุณ =====
+// ===== FIREBASE CONFIG =====
 const firebaseConfig = {
-  apiKey: "AIzaSyCgmB-hrpSwLvSxTh4zsNVFdYltFUIKFRs",
+apiKey: "AIzaSyCgmB-hrpSwLvSxTh4zsNVFdYltFUIKFRs",
   authDomain: "system-base-38187.firebaseapp.com",
   projectId: "system-base-38187",
   storageBucket: "system-base-38187.firebasestorage.app",
@@ -26,19 +27,19 @@ const firebaseConfig = {
 };
 
 
-// ===== Initialize Firebase =====
+// ===== INITIALIZE =====
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
 
-// ===== พิกัดออฟฟิศ (แก้เป็นของจริง) =====
+// ===== OFFICE LOCATION =====
 const officeLat = 13.7563;
 const officeLng = 100.5018;
-const maxDistance = 100; // เมตร
+const maxDistance = 100;
 
 
-// ===== ฟังก์ชันคำนวณระยะทาง =====
+// ===== DISTANCE FUNCTION =====
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI/180;
@@ -56,11 +57,46 @@ function getDistance(lat1, lon1, lat2, lon2) {
 }
 
 
-// ===== ตรวจสอบ login =====
-onAuthStateChanged(auth, (user) => {
+// ===== GENERATE DEVICE ID =====
+function getDeviceId() {
+  let deviceId = localStorage.getItem("deviceId");
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem("deviceId", deviceId);
+  }
+  return deviceId;
+}
+
+
+// ===== AUTH STATE =====
+onAuthStateChanged(auth, async (user) => {
+
   if (user) {
+
     document.getElementById("loginSection").style.display = "none";
     document.getElementById("appSection").style.display = "block";
+
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+
+    const deviceId = getDeviceId();
+
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        name: "",
+        role: "employee",
+        deviceId: deviceId,
+        position: "",
+        workMode: "office"
+      });
+    } else {
+      const data = userSnap.data();
+      if (data.deviceId !== deviceId) {
+        alert("อุปกรณ์นี้ไม่ได้รับอนุญาต");
+        location.reload();
+      }
+    }
+
   } else {
     document.getElementById("loginSection").style.display = "block";
     document.getElementById("appSection").style.display = "none";
@@ -68,33 +104,24 @@ onAuthStateChanged(auth, (user) => {
 });
 
 
-// ===== Register =====
+// ===== REGISTER =====
 window.register = async function() {
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
-
   await createUserWithEmailAndPassword(auth, email, password);
-  alert("สมัครสมาชิกสำเร็จ");
-}
+  alert("สมัครสำเร็จ");
+};
 
 
-// ===== Login =====
+// ===== LOGIN =====
 window.login = async function() {
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
-
   await signInWithEmailAndPassword(auth, email, password);
-  alert("เข้าสู่ระบบสำเร็จ");
-}
+};
 
 
-// ===== Logout =====
-window.logout = async function() {
-  await signOut(auth);
-}
-
-
-// ===== ตอกบัตร =====
+// ===== CLOCK IN / OUT =====
 window.checkIn = async function() {
 
   if (!navigator.geolocation) {
@@ -107,27 +134,56 @@ window.checkIn = async function() {
     const lat = position.coords.latitude;
     const lng = position.coords.longitude;
 
-    const distance = getDistance(lat, lng, officeLat, officeLng);
+    const user = auth.currentUser;
+    const today = new Date().toISOString().split("T")[0];
+    const docId = user.uid + "_" + today;
 
-    let locationType = "offsite";
+    const attendanceRef = doc(db, "attendance", docId);
+    const attendanceSnap = await getDoc(attendanceRef);
 
-    if (distance <= maxDistance) {
-      locationType = "office";
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+    const userData = userSnap.data();
+
+    if (userData.workMode === "office") {
+      const distance = getDistance(lat, lng, officeLat, officeLng);
+      if (distance > maxDistance) {
+        alert("คุณอยู่นอกพื้นที่ออฟฟิศ");
+        return;
+      }
     }
 
-    await addDoc(collection(db, "timeclock"), {
-      uid: auth.currentUser.uid,
-      email: auth.currentUser.email,
-      latitude: lat,
-      longitude: lng,
-      locationType: locationType,
-      distanceFromOffice: distance,
-      timestamp: serverTimestamp()
-    });
+    if (!attendanceSnap.exists()) {
 
-    alert("บันทึกเวลาเรียบร้อย (" + locationType + ")");
+      await setDoc(attendanceRef, {
+        uid: user.uid,
+        date: today,
+        clockIn: serverTimestamp(),
+        locationIn: { lat: lat, lng: lng },
+        clockOut: null,
+        locationOut: null
+      });
 
-  }, () => {
-    alert("ไม่สามารถดึงตำแหน่งได้");
+      alert("Clock In สำเร็จ");
+
+    } else {
+
+      const data = attendanceSnap.data();
+
+      if (!data.clockOut) {
+
+        await updateDoc(attendanceRef, {
+          clockOut: serverTimestamp(),
+          locationOut: { lat: lat, lng: lng }
+        });
+
+        alert("Clock Out สำเร็จ");
+
+      } else {
+        alert("วันนี้คุณตอกครบแล้ว");
+      }
+    }
+
   });
 };
+
